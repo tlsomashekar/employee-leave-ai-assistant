@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: springai
+  ai:
+    mcp:
+      server:
+        enabled: true
+        name: Leave management
+        version: 1.0.0
+        protocol: STREAMABLE
+        type: SYNC
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY}
+        chat:
+          options:
+            model: gemini-3.8-flash
+        embedding:
+          api-key: ${GEMINI_API_KEY}
+          text:
+            model: gemini-embedding-001
