@@ -4,7 +4,7 @@ A Spring Boot application that demonstrates how to use Spring AI with Google Gem
 
 The project combines:
 
-- A simple AI chat endpoint
+- A simple AI chat endpoint 
 - Structured extraction of leave requests from natural language
 - Tool-based HR assistance for leave balance, policy lookup, and working-day calculation
 - Knowledge-base Q&A using a vector store
