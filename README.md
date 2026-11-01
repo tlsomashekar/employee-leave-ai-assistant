@@ -1,204 +1,86 @@
-# Spring AI Leave Assistant
+# Employee Leave AI Assistant
 
-A Spring Boot application that demonstrates how to use Spring AI with Google Gemini for conversational AI, tool calling, and retrieval-augmented generation (RAG) in a leave-management scenario.
+A Java learning project that answers employee leave questions using **Spring AI, Gemini, RAG, tool calling, and an MCP server**. Built to understand AI application design and explain the decisions in interviews.
 
-The project combines:
+**Example:** “Can John take annual leave from 2026-11-10 to 2026-11-12?” The local assessment endpoint can ask tools for his balance, company rules, and weekday count, then explain the result. It does not book or approve leave.
 
-- A simple AI chat endpoint 
-- Structured extraction of leave requests from natural language
-- Tool-based HR assistance for leave balance, policy lookup, and working-day calculation
-- Knowledge-base Q&A using a vector store
-- OpenAPI documentation via Springdoc
+## Start here
 
-## Features
+- **[Learning handbook](docs/LEARNING-HANDBOOK.md):** concepts, architecture diagrams, code navigation, tradeoffs, interview questions, and a 15-minute revision route.
+- **[Learning roadmap](docs/ROADMAP.md):** eight milestones, exercises, completion criteria, and portfolio evidence.
+- **[Experiment log](docs/EXPERIMENTS.md):** record hypotheses, cases, observed results, and lessons.
+- **[Companion MCP client](https://github.com/tlsomashekar/employee-leave-mcp-client):** consumes the server’s balance tool from a separate application.
 
-### 1. General AI chat
-Use the `/ai` endpoint to send a natural-language prompt to Gemini.
+## What is implemented
 
-### 2. Leave request extraction
-The `/leave` endpoint extracts a `LeaveRequest` payload from free-form employee messages.
+| Use case | Endpoint | Pattern |
+| --- | --- | --- |
+| Ask a general question | `GET /ai?message=...` | Model call |
+| Extract employee, leave type, dates, and reason | `GET /leave?message=...` | Structured output to a Java record |
+| Ask for an employee’s balance | `GET /leave-balance?message=...` | Local tool calling |
+| Explain a leave assessment | `POST /leave-assessment` | Multiple local tools |
+| Ask about demo policies | `GET /knowledge/ask?question=...` | RAG with an in-memory vector store |
+| Discover and invoke a balance tool remotely | MCP Streamable HTTP | `@McpTool` server |
 
-### 3. HR tool calling
-The application exposes tools for:
-
-- `getLeaveBalance(employee)`
-- `getLeavePolicy()`
-- `countWorkingDays(startDate, endDate)`
-
-These tools are used by the `/leave-balance` and `/leave-assessment` endpoints.
-
-### 4. Leave assessment workflow
-The `/leave-assessment` endpoint evaluates a leave request using the available tools and returns an AI-generated answer grounded in the retrieved policy and balance data.
-
-### 5. Knowledge-base Q&A with vector search
-The `/knowledge/ask` endpoint answers questions using a `SimpleVectorStore` preloaded with company documents about annual leave, carry-forward rules, and sick leave.
-
-## Tech stack
-
-- Java 21
-- Spring Boot 4.1.1
-- Spring AI 2.0.1
-- Google GenAI integration via Spring AI
-- Spring MVC
-- Springdoc OpenAPI
-- Simple in-memory vector store
-
-## Project structure
-
-```text
-src/
-├── main/
-│   ├── java/com/java/example/springai/
-│   │   ├── config/
-│   │   │   ├── KnowledgeConfig.java
-│   │   │   └── OpenApiConfig.java
-│   │   ├── controller/
-│   │   │   ├── ChatController.java
-│   │   │   └── KnowledgeController.java
-│   │   ├── model/
-│   │   │   ├── LeaveAssessmentRequest.java
-│   │   │   └── LeaveRequest.java
-│   │   ├── service/
-│   │   │   ├── DateCalculationService.java
-│   │   │   ├── EmployeeService.java
-│   │   │   └── LeavePolicyService.java
-│   │   └── SpringaiApplication.java
-│   └── resources/
-│       └── application.yml
-└── test/java/com/java/example/springai/SpringaiApplicationTests.java
+```mermaid
+flowchart LR
+    User[API caller] --> API[Leave assistant :8080]
+    API <--> Model[Gemini]
+    API --> Local[Local tool adapters]
+    Local --> Data[Demo balances and calendar rules]
+    API --> RAG[Policy retrieval]
+    RAG --> Store[In-memory vector store]
+    Client[Companion client :8081] --> MCP[MCP balance tool]
+    MCP --> Fixture[Separate balance fixture]
 ```
 
-## Prerequisites
+The separate balance fixture is a current limitation. Sharing services between local and MCP adapters is a planned exercise.
 
-Before running the app, make sure you have:
+## Run locally
 
-- Java 21+
-- Maven or the included Maven wrapper (`mvnw`)
-- A Google Gemini API key
+Stack: Java 21, Spring Boot 4.1.1, Spring AI 2.0.1, Google GenAI, Spring MVC, Springdoc.
 
-## Configuration
-
-Set the Gemini API key as an environment variable:
-
-```bash
-export GEMINI_API_KEY="your_api_key_here"
-```
-
-On Windows PowerShell:
+PowerShell, from this repository:
 
 ```powershell
-$env:GEMINI_API_KEY="your_api_key_here"
+$env:GEMINI_API_KEY = "your-api-key"
+.\mvnw.cmd spring-boot:run
 ```
 
-The application reads this key from `application.yml`:
-
-```yaml
-spring:
-  ai:
-    google:
-      genai:
-        api-key: ${GEMINI_API_KEY}
-```
-
-## Running the application
-
-From the project root:
+macOS/Linux:
 
 ```bash
+export GEMINI_API_KEY="your-api-key"
 ./mvnw spring-boot:run
 ```
 
-On Windows:
+The server uses port **8080**. Startup embeds the sample policy documents, so it requires access to the embedding model and a valid key. The companion client runs on **8081**; start this application first. Open [Swagger UI](http://localhost:8080/swagger-ui/index.html) to try the HTTP endpoints.
 
 ```powershell
-mvnw.cmd spring-boot:run
+Invoke-RestMethod 'http://localhost:8080/leave-balance?message=What%20is%20John%27s%20leave%20balance%3F'
+
+$body = @{ message = 'Can John take annual leave from 2026-11-10 to 2026-11-12?' } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri 'http://localhost:8080/leave-assessment' -ContentType 'application/json' -Body $body
+
+Invoke-RestMethod 'http://localhost:8080/knowledge/ask?question=How%20many%20days%20can%20I%20carry%20forward%3F'
 ```
 
-The app starts on:
+Fixture facts: John has 12 annual days, Mary 8, Alex 15; policy documents say annual entitlement is 18 days and carry-forward is at most 5 days. Generated wording may vary. `LeaveRequest` fields are `employee`, `leaveType`, `startDate`, `endDate`, and `reason`.
 
-```text
-http://localhost:8080
+## Verification and limits
+
+Verified on 1 November 2026: Maven `test` compiled the application on Java 21.0.8 and reported **0 tests executed**. Live Gemini calls and an end-to-end MCP exchange were not verified. There is no quality benchmark yet.
+
+Current gaps: public holidays appear in policy but are not excluded by the calculator; assessment comparisons are model-driven; validation and error handling need work; balances are mocked and duplicated; the vector store is rebuilt at startup; responses do not expose sources; memory and employee authorization are not implemented.
+
+This is a learning project with synthetic HR data. Upcoming milestones are planned work, not completed capabilities.
+
+```powershell
+.\mvnw.cmd test
 ```
 
-## API endpoints
+The first milestone adds meaningful tests. No passing-test badge or accuracy claim is presented until there is evidence.
 
-### General chat
+## Interview walkthrough
 
-```http
-GET /ai?message=What is the leave policy?
-```
-
-### Extract leave request
-
-```http
-GET /leave?message=John wants 3 days of annual leave from 2026-11-10 to 2026-11-12
-```
-
-### Leave balance query
-
-```http
-GET /leave-balance?message=What is John's leave balance?
-```
-
-### Leave assessment
-
-```http
-POST /leave-assessment
-Content-Type: application/json
-
-{
-  "message": "John wants 5 days of annual leave from 2026-11-10 to 2026-11-14"
-}
-```
-
-### Knowledge-base Q&A
-
-```http
-GET /knowledge/ask?question=How many annual leave days do full-time employees get?
-```
-
-## Swagger / OpenAPI
-
-The project exposes Swagger UI for API inspection:
-
-```text
-http://localhost:8080/swagger-ui/index.html
-```
-
-## Example responses
-
-### `/leave`
-
-```json
-{
-  "employee": "John",
-  "leaveType": "annual",
-  "startDate": "2026-11-10",
-  "endDate": "2026-11-12",
-  "notes": "unknown"
-}
-```
-
-### `/knowledge/ask`
-
-```text
-Full-time employees receive 18 annual leave days per year.
-```
-
-## Notes
-
-- Demo data is intentionally simple and in-memory.
-- Employee balances are mocked in `EmployeeService`.
-- The vector store is initialized with a few sample company documents in `KnowledgeConfig`.
-- The application is designed to demonstrate AI patterns and is not production-ready for real HR systems without secure data sources and validation.
-
-## Useful commands
-
-```bash
-./mvnw clean test
-./mvnw package
-```
-
-## License
-
-This project is for learning and demonstration purposes.
+Explain the use case, trace one request using the handbook diagrams, show the code, demonstrate a failure case, then explain what your next experiment would prove. Keep the demo to about five minutes.
